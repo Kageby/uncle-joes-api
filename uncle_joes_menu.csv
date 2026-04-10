@@ -1,0 +1,31 @@
+id,name,category,size,calories,price
+f58e2611-f0ef-468d-b0ae-fface92ea9d3,Uncle Joe's Classic Coffee,Coffee,Small,5,3.99
+2d56e796-bf51-4844-87c4-84f35537f68d,Uncle Joe's Classic Coffee,Coffee,Medium,10,4.49
+a025997a-f844-4426-b0ce-b96922e7efec,Uncle Joe's Classic Coffee,Coffee,Large,15,4.99
+e4157957-a0eb-400e-88ff-2214e934422f,Uncle Joe's Latte,Espresso,Small,150,5.49
+fff8b0c2-a23b-4cce-a35a-d30ce9d48a4c,Uncle Joe's Latte,Espresso,Medium,200,5.99
+8c985609-6932-4b80-bb71-4f57481cae69,Uncle Joe's Latte,Espresso,Large,250,6.49
+0a5625c9-afe4-431f-880a-8e56a0fced07,Uncle Joe's Cappuccino,Espresso,Small,120,5.29
+a6be1073-96a8-4b35-bf8a-e57332a62672,Uncle Joe's Cappuccino,Espresso,Medium,170,5.79
+a12395d3-00fb-4168-9424-c12173889c85,Uncle Joe's Cappuccino,Espresso,Large,220,6.29
+694d30e9-fea3-4812-b47b-2431b343b7bf,Uncle Joe's Mocha,Espresso,Small,250,5.99
+1bc70ebf-f03c-45b2-8c71-694131bc8550,Uncle Joe's Mocha,Espresso,Medium,300,6.49
+c3f4cb02-4959-442d-a26f-eb69f24280c3,Uncle Joe's Mocha,Espresso,Large,350,6.99
+b2ebeda1-fbe2-4a5a-b929-b2062796f11a,Uncle Joe's Iced Coffee,Coffee,Small,60,4.49
+941491f1-e7e9-4cbf-8c61-89b486400a98,Uncle Joe's Iced Coffee,Coffee,Medium,80,4.99
+99397cd1-d301-43f9-98b2-1275d1ad2962,Uncle Joe's Iced Coffee,Coffee,Large,100,5.49
+6f18de3d-1968-46f1-9ce1-ddb7ecc5b655,Uncle Joe's Green Tea,Tea,Small,0,3.99
+6ced69f0-1b23-49d7-9348-6acd34444ec2,Uncle Joe's Green Tea,Tea,Medium,0,4.49
+14cb0ecf-04d0-43c0-935b-7e9ec9a969c2,Uncle Joe's Green Tea,Tea,Large,0,4.99
+c3c96d5e-c46d-49ac-b222-1abef80e4fb0,Uncle Joe's Black Tea,Tea,Small,0,3.99
+4e20b044-aa9c-4b94-9e3e-35a01c998081,Uncle Joe's Black Tea,Tea,Medium,0,4.49
+042ba62b-0351-4ea0-a9be-4964a1385dac,Uncle Joe's Black Tea,Tea,Large,0,4.99
+dfa07f50-85eb-4128-a980-f8d525e9663e,Uncle Joe's Chai Latte,Tea,Small,180,5.49
+a97df5ca-08be-4c30-87e7-70e111d962d0,Uncle Joe's Chai Latte,Tea,Medium,230,5.99
+73daa20a-f949-46f6-96e1-c693aaa04001,Uncle Joe's Chai Latte,Tea,Large,280,6.49
+1d62a818-d758-4aa0-84c5-d1e0b8d5edd2,Uncle Joe's Herbal Tea,Tea,Small,0,3.99
+a5516b0e-a7fe-4323-adf4-850728902cca,Uncle Joe's Herbal Tea,Tea,Medium,0,4.49
+8655aa84-cbce-4242-bd60-cc436349543c,Uncle Joe's Herbal Tea,Tea,Large,0,4.99
+4b92e9fd-2396-41d7-b883-fa2f0321b3e3,Uncle Joe's Hot Chocolate,Other,Small,200,4.99
+dbb17e0e-4d37-4ddc-87fd-adf21539c18c,Uncle Joe's Hot Chocolate,Other,Medium,250,5.49
+b4676f2a-6ecf-448e-9bab-589c851530d4,Uncle Joe's Hot Chocolate,Other,Large,300,5.99
