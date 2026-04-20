@@ -105,4 +105,4 @@ Loyalty points are **not stored** — they are calculated dynamically.
 
 ### Team Members:
 
-Knittala, 
+Knittala, AlexaGonzalesTuesta
