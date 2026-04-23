@@ -11,7 +11,7 @@ fastapi = "*"
 uvicorn = {version = "*", extras = ["standard"]}
 bcrypt = "*"
 google-cloud-bigquery = "*"
-pydantic = {version = "*", extras = ["email"]}
+pydantic = "*"
 
 [build-system]
 requires = ["poetry-core"]
