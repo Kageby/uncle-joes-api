@@ -99,23 +99,42 @@ def login(body: LoginRequest):
 #================================================================================================#
 
 # GP2 REQUIRED: GET /menu — return menu items (Supports filtering)
-@app.get("/menu_items_filter")
-def get_menu(
+@app.get("/filter/menu_items")
+def get_filtered_menu(
     category: Optional[str] = Query(None, description="Filter by category (Coffee, Espresso, etc.)"),
     size: Optional[str] = Query(None, description="Filter by size (Small, Medium, Large)"),
+    min_price: Optional[float] = Query(None, gt=0, description="Minimum price"),
+    max_price: Optional[float] = Query(None, gt=0, description="Maximum price"),
+    min_calories: Optional[int] = Query(None, ge=0, description="Minimum calories"),
+    max_calories: Optional[int] = Query(None, ge=0, description="Maximum calories"),
 ):
     """
-    Returns all menu items. Supports optional filtering by category and size.
+    Returns all menu items by filters.
     """
     where_clauses = []
     params = []
 
+    # String Filters
     if category:
         where_clauses.append("LOWER(category) = LOWER(@category)")
         params.append(bigquery.ScalarQueryParameter("category", "STRING", category))
     if size:
         where_clauses.append("LOWER(size) = LOWER(@size)")
         params.append(bigquery.ScalarQueryParameter("size", "STRING", size))
+
+    # Numerical Filters   
+    if min_price is not None:
+        where_clauses.append("price >= @min_price")
+        params.append(bigquery.ScalarQueryParameter("min_price", "FLOAT64", min_price))
+    if max_price is not None:
+        where_clauses.append("price <= @max_price")
+        params.append(bigquery.ScalarQueryParameter("max_price", "FLOAT64", max_price))
+    if min_calories is not None:
+        where_clauses.append("calories >= @min_calories")
+        params.append(bigquery.ScalarQueryParameter("min_calories", "INT64", min_calories))
+    if max_calories is not None:
+        where_clauses.append("calories <= @max_calories")
+        params.append(bigquery.ScalarQueryParameter("max_calories", "INT64", max_calories))
 
     where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
@@ -129,13 +148,19 @@ def get_menu(
             CAST(price AS FLOAT64) AS price
         FROM `{GCP_PROJECT}.{DATASET}.menu_items`
         {where_sql}
-        ORDER BY category, name, size
+        ORDER BY name
     """
 
     job_config = bigquery.QueryJobConfig(query_parameters=params)
 
     try:
-        results = client.query(query, job_config=job_config).result()
+        query_job = client.query(query, job_config=job_config)
+        results = [dict(row) for row in query_job.result()]
+        
+        # Check if empty
+        if not results:
+            return {"message": "No items found!"}
+        return results
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -145,20 +170,41 @@ def get_menu(
     return [dict(row) for row in results]
 
 
-# GP2 REQUIRED: GET /menu_items/{id} — return a single menu item
+# GP2 REQUIRED: GET /menu_items/{id} — return a single menu item by id (Can include which fields to return by id)
 @app.get("/menu_items/{id}")
-def get_menu_item(id: str):
-    """
-    Retrieves the menu item specified by its id.
-    """
+def get_menu_item_by_id(
+    id: str,
+    include: Optional[str] = Query(None, description="separate fields by comma")  
+):
+    field_map = {
+        "id": "id",
+        "name": "name",
+        "category": "category",
+        "size": "size",
+        "calories": "calories",
+        "price": "CAST(price AS FLOAT64) AS price"
+    }
+
+    # Default
+    if not include:
+        selected_fields = ["id"]
+    else:
+        requested = [f.strip().lower() for f in include.split(",")]
+
+        # Always include id 
+        if "id" not in requested:
+            requested.append("id")
+
+        selected_fields = []
+        for field in requested:
+            if field in field_map:
+                selected_fields.append(field_map[field])
+
+    select_clause = ",\n    ".join(selected_fields)
+
     query = f"""
         SELECT
-            id,
-            name,
-            category,
-            size,
-            calories,
-            CAST(price AS FLOAT64) AS price
+            {select_clause}
         FROM `{GCP_PROJECT}.{DATASET}.menu_items`
         WHERE id = @id
         LIMIT 1
@@ -186,144 +232,30 @@ def get_menu_item(id: str):
 
     return dict(results[0])
 
-
+# GP2 REQUIRED: GET /menu_items — return all the menu items (Can include which fields to show)
 @app.get("/menu_items")
-def get_menu_items_alias():
-    """
-    Alias for /menu — retrieves all menu items from the menu_items table.
-    """
+def get_all_menu_items(include: Optional[str] = Query(None, description="separate fields by comma")  
+):
+    field_map = {
+        "id": "id",
+        "name": "name",
+        "category": "category",
+        "size": "size",
+        "calories": "calories",
+        "price": "CAST(price AS FLOAT64) AS price"
+    }
+
+    selected_fields = ["id"]
+    if include:
+        requested = [f.strip().lower() for f in include.split(",")]
+        for field in requested:
+            if field in field_map:
+                selected_fields.append(field_map[field])
+    select_clause = ", ".join(selected_fields)
+
     query = f"""
-        SELECT
-            id,
-            name,
-            category,
-            size,
-            calories,
-            CAST(price AS FLOAT64) AS price
-        FROM `{GCP_PROJECT}.{DATASET}.menu_items`
-        ORDER BY id
-    """
-
-    try:
-        results = client.query(query).result()
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Database query failed: {str(e)}"
-        )
-
-    return [dict(row) for row in results]
-
-
-@app.get("/menu/calories")
-def get_menu_item_calories():
-    """
-    Retrieves item ids, names, and calories.
-    """
-    query = f"""
-        SELECT
-            id,
-            name,
-            calories
-        FROM `{GCP_PROJECT}.{DATASET}.menu_items`
-        ORDER BY id
-    """
-
-    try:
-        results = client.query(query).result()
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Database query failed: {str(e)}"
-        )
-
-    return [dict(row) for row in results]
-
-
-@app.get("/menu_items/price")
-def get_menu_item_price():
-    """
-    Retrieves item ids, names, and prices.
-    """
-    query = f"""
-        SELECT
-            id,
-            name,
-            CAST(price AS FLOAT64) AS price
-        FROM `{GCP_PROJECT}.{DATASET}.menu_items`
-        ORDER BY id
-    """
-
-    try:
-        results = client.query(query).result()
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Database query failed: {str(e)}"
-        )
-
-    return [dict(row) for row in results]
-
-
-@app.get("/menu_items/name")
-def get_menu_item_name():
-    """
-    Retrieves item ids and names.
-    """
-    query = f"""
-        SELECT
-            id,
-            name
-        FROM `{GCP_PROJECT}.{DATASET}.menu_items`
-        ORDER BY id
-    """
-
-    try:
-        results = client.query(query).result()
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Database query failed: {str(e)}"
-        )
-
-    return [dict(row) for row in results]
-
-
-@app.get("/api/menu_items/category")
-def get_menu_item_category():
-    """
-    Retrieves item ids, names, and categories.
-    """
-    query = f"""
-        SELECT
-            id,
-            name,
-            category
-        FROM `{GCP_PROJECT}.{DATASET}.menu_items`
-        ORDER BY id
-    """
-
-    try:
-        results = client.query(query).result()
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Database query failed: {str(e)}"
-        )
-
-    return [dict(row) for row in results]
-
-
-@app.get("/api/menu_items/size")
-def get_menu_item_size():
-    """
-    Retrieves item ids, names, and sizes.
-    """
-    query = f"""
-        SELECT
-            id,
-            name,
-            size
+        SELECT id
+            {select_clause}
         FROM `{GCP_PROJECT}.{DATASET}.menu_items`
         ORDER BY id
     """
@@ -437,7 +369,7 @@ def get_location(id: str):
 #================================================================================================#
 
 @app.get("/members/{id}")
-def get_member(_id: str):
+def get_member(id: str):
     """
     Returns a member's public profile (no password or token).
     """
@@ -481,9 +413,9 @@ def get_member(_id: str):
 #--------------------------------------Orders & Order History (GP3)------------------------------#
 #================================================================================================#
 
-@app.get("/orders/member/{id}")
+@app.get("/order_history/members/{id}")
 def get_member_order_history(
-    id: str,
+    member_id: str,
     limit: int = Query(50, ge=1, le=500),
 ):
     """
@@ -546,7 +478,7 @@ def get_member_order_history(
     return {"member_id": member_id, "count": len(orders), "orders": orders}
 
 
-@app.get("/orders/{order_id}")
+@app.get("/receipt/orders/{order_id}")
 def get_order(order_id: str):
     """
     Returns a single order (receipt) including all line items.
@@ -604,7 +536,7 @@ def get_order(order_id: str):
         )
 
     order = dict(headers[0])
-    order["items"] = [dict(item) for item in items]
+    order["items"] = [dict(items) for items in items]
     return order
 
 
@@ -612,7 +544,7 @@ def get_order(order_id: str):
 #--------------------------------------Loyalty Points (GP3)--------------------------------------#
 #================================================================================================#
 
-@app.get("/members/{id}/points")
+@app.get("/points/members/{id}")
 def get_member_points(id: str):
     """
     Returns a member's total Coffee Club points balance.
@@ -654,7 +586,7 @@ def get_member_points(id: str):
     }
 
 
-@app.get("/orders/{order_id}/points")
+@app.get("/points/orders/{order_id}")
 def get_points_for_order(order_id: str):
     """
     Returns the points earned on a single order: FLOOR(order_total).
