@@ -343,7 +343,7 @@ def get_location(id: str):
 
     job_config = bigquery.QueryJobConfig(
         query_parameters=[
-            bigquery.ScalarQueryParameter("id", "STRING", location_id)
+            bigquery.ScalarQueryParameter("id", "STRING", id)
         ]
     )
 
@@ -358,7 +358,7 @@ def get_location(id: str):
     if not results:
         raise HTTPException(
             status_code=404,
-            detail=f"Location with id {location_id} not found."
+            detail=f"Location with id {id} not found."
         )
 
     return dict(results[0])
@@ -388,7 +388,7 @@ def get_member(id: str):
 
     job_config = bigquery.QueryJobConfig(
         query_parameters=[
-            bigquery.ScalarQueryParameter("id", "STRING", member_id)
+            bigquery.ScalarQueryParameter("id", "STRING", id)
         ]
     )
 
@@ -479,9 +479,9 @@ def get_member_order_history(
 
 
 @app.get("/receipt/orders/{order_id}")
-def get_order(order_id: str):
+def get_order_receipt(order_id: str):
     """
-    Returns a single order (receipt) including all line items.
+    Returns a single order receipt including all line items.
     """
     header_query = f"""
         SELECT
