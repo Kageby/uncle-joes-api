@@ -415,7 +415,7 @@ def get_member(id: str):
 
 @app.get("/order_history/members/{id}")
 def get_member_order_history(
-    member_id: str,
+    id: str,
     limit: int = Query(50, ge=1, le=500),
 ):
     """
