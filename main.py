@@ -20,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from google.cloud import bigquery
 from pydantic import BaseModel
 from typing import Optional
+import uuid
 
 app = FastAPI(title="Uncle Joe's Coffee API")
 
@@ -546,11 +547,6 @@ def get_order_receipt(order_id: str):
 
 @app.post("/orders")
 def create_order(body: dict):
-    """
-    Creates a new order and matching order item rows.
-    This version keeps the request body self-contained without separate Pydantic classes.
-    """
-
     items = body.get("items", [])
     member_id = body.get("member_id")
     store_id = body.get("store_id")
@@ -562,52 +558,89 @@ def create_order(body: dict):
     if not store_id:
         raise HTTPException(status_code=400, detail="Store is required.")
 
-    order_id = f"ORD-{client.query('SELECT GENERATE_UUID() AS id').result().to_dataframe().iloc[0]['id']}"
-
-    items_subtotal = round(
-        sum((float(item.get("price", 0)) or 0) * int(item.get("quantity", 0)) for item in items),
-        2
-    )
-
-    order_discount = 0.0
-    order_subtotal = round(items_subtotal - order_discount, 2)
-    sales_tax = round(order_subtotal * 0.06, 2)
-    order_total = round(order_subtotal + sales_tax, 2)
-
-    order_query = f"""
-        INSERT INTO `{GCP_PROJECT}.{DATASET}.orders`
-            (order_id, member_id, store_id, order_date,
-             items_subtotal, order_discount, order_subtotal, sales_tax, order_total)
-        VALUES
-            (@order_id, @member_id, @store_id, CURRENT_TIMESTAMP(),
-             @items_subtotal, @order_discount, @order_subtotal, @sales_tax, @order_total)
-    """
-
-    order_params = [
-        bigquery.ScalarQueryParameter("order_id", "STRING", order_id),
-        bigquery.ScalarQueryParameter("member_id", "STRING", member_id),
-        bigquery.ScalarQueryParameter("store_id", "STRING", store_id),
-        bigquery.ScalarQueryParameter("items_subtotal", "FLOAT64", items_subtotal),
-        bigquery.ScalarQueryParameter("order_discount", "FLOAT64", order_discount),
-        bigquery.ScalarQueryParameter("order_subtotal", "FLOAT64", order_subtotal),
-        bigquery.ScalarQueryParameter("sales_tax", "FLOAT64", sales_tax),
-        bigquery.ScalarQueryParameter("order_total", "FLOAT64", order_total),
-    ]
-
     try:
+        order_id = f"ORD-{uuid.uuid4()}"
+        full_items = []
+
+        for item in items:
+            menu_item_id = item.get("menu_item_id")
+            quantity = int(item.get("quantity", 1))
+
+            if not menu_item_id:
+                raise HTTPException(status_code=400, detail="Missing menu_item_id.")
+
+            menu_query = f"""
+                SELECT
+                    id,
+                    name,
+                    size,
+                    CAST(price AS FLOAT64) AS price
+                FROM `{GCP_PROJECT}.{DATASET}.menu_items`
+                WHERE id = @menu_item_id
+                LIMIT 1
+            """
+
+            menu_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("menu_item_id", "STRING", menu_item_id)
+                ]
+            )
+
+            menu_results = list(client.query(menu_query, job_config=menu_config).result())
+
+            if not menu_results:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Menu item with id {menu_item_id} not found."
+                )
+
+            menu_row = dict(menu_results[0])
+
+            full_items.append({
+                "menu_item_id": menu_row["id"],
+                "name": menu_row["name"],
+                "size": menu_row["size"],
+                "price": float(menu_row["price"]),
+                "quantity": quantity
+            })
+
+        items_subtotal = round(
+            sum(item["price"] * item["quantity"] for item in full_items),
+            2
+        )
+
+        order_discount = 0.0
+        order_subtotal = round(items_subtotal - order_discount, 2)
+        sales_tax = round(order_subtotal * 0.06, 2)
+        order_total = round(order_subtotal + sales_tax, 2)
+
+        order_query = f"""
+            INSERT INTO `{GCP_PROJECT}.{DATASET}.orders`
+                (order_id, member_id, store_id, order_date,
+                 items_subtotal, order_discount, order_subtotal, sales_tax, order_total)
+            VALUES
+                (@order_id, @member_id, @store_id, CURRENT_TIMESTAMP(),
+                 @items_subtotal, @order_discount, @order_subtotal, @sales_tax, @order_total)
+        """
+
+        order_params = [
+            bigquery.ScalarQueryParameter("order_id", "STRING", order_id),
+            bigquery.ScalarQueryParameter("member_id", "STRING", member_id),
+            bigquery.ScalarQueryParameter("store_id", "STRING", store_id),
+            bigquery.ScalarQueryParameter("items_subtotal", "FLOAT64", items_subtotal),
+            bigquery.ScalarQueryParameter("order_discount", "FLOAT64", order_discount),
+            bigquery.ScalarQueryParameter("order_subtotal", "FLOAT64", order_subtotal),
+            bigquery.ScalarQueryParameter("sales_tax", "FLOAT64", sales_tax),
+            bigquery.ScalarQueryParameter("order_total", "FLOAT64", order_total),
+        ]
+
         client.query(
             order_query,
             job_config=bigquery.QueryJobConfig(query_parameters=order_params)
         ).result()
 
-        for item in items:
-            line_id = f"LINE-{client.query('SELECT GENERATE_UUID() AS id').result().to_dataframe().iloc[0]['id']}"
-
-            menu_item_id = item.get("menu_item_id") or item.get("id")
-            item_name = item.get("name") or item.get("item_name") or "Menu Item"
-            size = item.get("size")
-            quantity = int(item.get("quantity", 1))
-            price = float(item.get("price", 0))
+        for item in full_items:
+            line_id = f"LINE-{uuid.uuid4()}"
 
             item_query = f"""
                 INSERT INTO `{GCP_PROJECT}.{DATASET}.order_items`
@@ -619,11 +652,11 @@ def create_order(body: dict):
             item_params = [
                 bigquery.ScalarQueryParameter("id", "STRING", line_id),
                 bigquery.ScalarQueryParameter("order_id", "STRING", order_id),
-                bigquery.ScalarQueryParameter("menu_item_id", "STRING", menu_item_id),
-                bigquery.ScalarQueryParameter("item_name", "STRING", item_name),
-                bigquery.ScalarQueryParameter("size", "STRING", size),
-                bigquery.ScalarQueryParameter("quantity", "INT64", quantity),
-                bigquery.ScalarQueryParameter("price", "FLOAT64", price),
+                bigquery.ScalarQueryParameter("menu_item_id", "STRING", item["menu_item_id"]),
+                bigquery.ScalarQueryParameter("item_name", "STRING", item["name"]),
+                bigquery.ScalarQueryParameter("size", "STRING", item["size"]),
+                bigquery.ScalarQueryParameter("quantity", "INT64", item["quantity"]),
+                bigquery.ScalarQueryParameter("price", "FLOAT64", item["price"]),
             ]
 
             client.query(
@@ -631,6 +664,8 @@ def create_order(body: dict):
                 job_config=bigquery.QueryJobConfig(query_parameters=item_params)
             ).result()
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -647,7 +682,7 @@ def create_order(body: dict):
         "order_subtotal": order_subtotal,
         "sales_tax": sales_tax,
         "order_total": order_total,
-        "items": items
+        "items": full_items
     }
 
 #================================================================================================#
