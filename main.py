@@ -18,7 +18,7 @@ import bcrypt
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from google.cloud import bigquery
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 import uuid
 
@@ -41,8 +41,10 @@ client = bigquery.Client(project=GCP_PROJECT)
 
 
 class LoginRequest(BaseModel):
-    email: str
-    password: str
+    email: str = Field(..., min_length=3, max_length=254)
+    # bcrypt only uses the first 72 bytes of input; cap on the API side
+    # so we don't silently truncate longer passwords.
+    password: str = Field(..., min_length=1, max_length=72)
 
 
 @app.get("/")
@@ -53,45 +55,85 @@ def root():
 
 @app.post("/login")
 def login(body: LoginRequest):
-    # 1. Hash the submitted password so we never handle it in plain text
-    #    beyond this point.  bcrypt.hashpw produces a new hash every call
-    #    (random salt), so we can't compare hashes directly — we use
-    #    bcrypt.checkpw() against the stored hash retrieved from the DB.
-    submitted_bytes = body.password.encode("utf-8")
-    _ = bcrypt.hashpw(submitted_bytes, bcrypt.gensalt())  # shown for illustration
+    """
+    Authenticate a Coffee Club member by email + password.
 
-    # 2. Build a parameterized query to fetch the member's stored hash.
-    #    Never interpolate user input directly into SQL strings.
-    query = """
-        SELECT id, first_name, last_name, email, password
-        FROM `{project}.{dataset}.members`
-        WHERE email = @email
+    Verification happens entirely on the backend:
+      - The submitted password is sent over HTTPS in the request body.
+      - We fetch the bcrypt hash from BigQuery using a parameterized query.
+      - bcrypt.checkpw() compares the submitted password to the stored hash
+        in constant time. The hash never leaves the backend.
+
+    On success we return the member's public profile (no password, no
+    api_token) so the frontend can populate the dashboard without an
+    extra round-trip to /members/{id}.
+    """
+    # Normalize the email so casing/whitespace differences don't cause
+    # false-negative logins. Passwords are NOT normalized.
+    email_normalized = body.email.strip().lower()
+    submitted_bytes = body.password.encode("utf-8")
+
+    # Parameterized query — never interpolate user input into SQL.
+    query = f"""
+        SELECT
+            id,
+            first_name,
+            last_name,
+            email,
+            phone_number,
+            home_store,
+            password
+        FROM `{GCP_PROJECT}.{DATASET}.members`
+        WHERE LOWER(email) = @email
         LIMIT 1
-    """.format(project=GCP_PROJECT, dataset=DATASET)
+    """
 
     job_config = bigquery.QueryJobConfig(
         query_parameters=[
-            bigquery.ScalarQueryParameter("email", "STRING", body.email),
+            bigquery.ScalarQueryParameter("email", "STRING", email_normalized),
         ]
     )
 
-    results = list(client.query(query, job_config=job_config).result())
+    try:
+        results = list(client.query(query, job_config=job_config).result())
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database query failed: {str(e)}"
+        )
+
+    # Use the SAME generic error for "no such email" and "wrong password"
+    # so an attacker can't tell which Coffee Club emails exist.
+    INVALID = HTTPException(status_code=401, detail="Invalid email or password.")
 
     if not results:
-        raise HTTPException(status_code=401, detail="Invalid email or password.")
+        raise INVALID
 
     row = results[0]
-    stored_hash: str = row["password"]
+    stored_hash = row["password"]
 
-    # 3. Verify the submitted password against the bcrypt hash from the DB.
-    if not bcrypt.checkpw(submitted_bytes, stored_hash.encode("utf-8")):
-        raise HTTPException(status_code=401, detail="Invalid email or password.")
+    if not stored_hash:
+        raise INVALID
 
+    try:
+        valid = bcrypt.checkpw(submitted_bytes, stored_hash.encode("utf-8"))
+    except ValueError:
+        # Malformed hash in DB — treat as auth failure rather than 500.
+        raise INVALID
+
+    if not valid:
+        raise INVALID
+
+    # Success — return the public profile. NEVER return password or api_token.
     return {
         "authenticated": True,
         "id": row["id"],
+        "first_name": row["first_name"],
+        "last_name": row["last_name"],
         "name": f"{row['first_name']} {row['last_name']}",
         "email": row["email"],
+        "phone_number": row["phone_number"],
+        "home_store": row["home_store"],
     }
 
 
