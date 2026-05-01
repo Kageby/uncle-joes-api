@@ -15,7 +15,7 @@ Then open http://127.0.0.1:8000/docs
 
 import math
 import bcrypt
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from google.cloud import bigquery
 from pydantic import BaseModel, Field
@@ -812,5 +812,71 @@ def get_points_for_order(order_id: str):
     return {
         "order_id": order_id,
         "order_total": total,
-        "points_earned": int(math.floor(total)),
+        "points_earned": int(math.floor(total))
     }
+
+
+#================================================================================================#
+#--------------------------------------Other Endpoints (GP3)--------------------------------------#
+#================================================================================================# 
+
+
+def get_bq_client():
+    return bigquery.Client()
+
+# Request body model 
+class UpdateHomeStoreRequest(BaseModel):
+    home_store: str
+
+@app.put("/update_profile/{id}/home_store")
+def update_home_store(
+    id: str,
+    request: UpdateHomeStoreRequest,
+    bq: bigquery.Client = Depends(get_bq_client)
+):
+    """
+    Update member home_store after validating selected location
+    """
+    validate_query = f"""
+        SELECT id
+        FROM `{GCP_PROJECT}.{DATASET}.locations`
+        WHERE id = @home_store
+        LIMIT 1
+    """
+    validate_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("home_store", "STRING", request.home_store)
+        ]
+    )
+
+    try:
+        validation_result = list(
+            bq.query(validate_query, job_config=validate_config).result()
+        )
+        if not validation_result:
+            raise HTTPException(status_code=404, detail="Location not found")
+        update_query = f"""
+            UPDATE `{GCP_PROJECT}.{DATASET}.members`
+            SET home_store = @home_store
+            WHERE id = @id
+        """
+
+        update_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter(
+                    "home_store", "STRING", request.home_store
+                ),
+                bigquery.ScalarQueryParameter("id", "STRING", id),
+            ]
+        )
+        bq.query(update_query, job_config=update_config).result()
+        return {
+            "message": "Home store updated successfully",
+            "id": id,
+            "home_store": request.home_store
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
